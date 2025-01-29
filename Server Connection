@@ -1,0 +1,144 @@
+from ftplib import FTP_TLS
+#from typing import ItemsView
+import os 
+from datetime import datetime
+
+# Defining variables
+hostname = "nikoleta.medphys.ucl.ac.uk"
+username = "uclh"
+password = "\"Hh2jaKe29"
+
+local_directory_path = "C:\\Users\\sebas\\Documents\\Uni\\Testing"  # Path to the local file
+log_file_path = os.path.join(local_directory_path, "upload_log.txt")
+
+def get_remote_file_size(ftps, filename):
+    try:
+        size = ftps.size(filename)
+        return size
+    except Exception:
+        return None
+
+try:
+    # Check if the local directory exists
+    if not os.path.exists(local_directory_path):
+        raise FileNotFoundError(f"Local directory '{local_directory_path}' does not exist.")
+
+    # Establish a connection to the FTP server with TLS
+    ftps = FTP_TLS(hostname)
+
+    # Secure the control connection
+    ftps.auth()
+    ftps.prot_p()  # Switch to secure data connection
+
+    # Login using the provided credentials
+    ftps.login(user=username, passwd=password)
+
+    print(f"Successfully connected to {hostname} as {username}.")
+
+    # List directories on the server
+    print("Listing directories on the server:")
+    directories = []
+
+    def list_folders(line, folder_list):
+        parts = line.split()
+        if len(parts) > 8:  # Ensure the line contains expected format
+            name = parts[-1]
+            if line.startswith('d'):  # Indicates a directory in UNIX-style listing
+                folder_list.append(name)
+
+    ftps.retrlines('LIST', lambda line: list_folders(line, directories))
+
+    if directories:
+        print("Directories:")
+        for directory in directories:
+            print(directory)
+
+        # Enter the first directory
+        first_directory = directories[0]
+        print(f"\nEntering the first directory: {first_directory}")
+        ftps.cwd(first_directory)
+
+        # List subdirectories within the first directory
+        print(f"\nListing directories within {first_directory}:")
+        subdirectories = []
+        ftps.retrlines('LIST', lambda line: list_folders(line, subdirectories))
+
+        if subdirectories:
+            for subdirectory in subdirectories:
+                print(subdirectory)
+        else:
+            print("No subdirectories found.")
+    else:
+        print("No directories found on the server.")
+
+    #Check if "Testing" exists as a file or folder
+    #if "Testing" not in directories:
+        #print("Creating folder name 'Testing'")
+        #ftps.mkd('Testing')
+    #else:
+        #print("None")
+
+ # Change to Testing directory
+    try:
+        ftps.cwd("Testing")
+        print("Changed to 'Testing' directory.")
+        #directories.clear()
+        #ftps.retrlines('LIST', lambda line: list_folders(line, directories))
+
+
+    except Exception as e:
+        print(f"Failed to change to 'Testing' directory: {e}")
+        ftps.quit()
+        raise
+
+    # Create or open the log file
+    with open(log_file_path, "a") as log_file:
+        # Write the header if the log file is empty
+        if os.stat(log_file_path).st_size == 0:
+            log_file.write("Upload Log:\n")
+            log_file.write(f"{'Timestamp':<25}{'File':<30}{'Status':<10}\n")
+            log_file.write("-" * 65 + "\n")
+
+         # Upload or replace files in the local directory
+        try:
+            for file_name in os.listdir(local_directory_path):
+                local_file_path = os.path.join(local_directory_path, file_name)
+                # Only upload files (skip directories)
+                if os.path.isfile(local_file_path):
+                    remote_file_size = get_remote_file_size(ftps, file_name)
+                    local_file_size = os.path.getsize(local_file_path)
+
+                    if remote_file_size is None:  # File does not exist on the server
+                        try:
+                            with open(local_file_path, "rb") as file:
+                                ftps.storbinary(f"STOR {file_name}", file)
+                            print(f"File '{local_file_path}' Uploaded successfully as '{file_name}'.")
+                            log_file.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S'):<25}{file_name:<30}Uploaded\n")
+                        except Exception as e:
+                            print(f"Failed to replace file '{file_name}': {e}")
+                            log_file.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S'):<25}{file_name:<30}Failed\n")
+                    elif local_file_size > remote_file_size:  # Replace if local file is larger or equal
+                        try:
+                            with open(local_file_path, "rb") as file:
+                                ftps.storbinary(f"STOR {file_name}", file)
+                            print(f"File '{local_file_path}' replaced successfully as '{file_name}'.")
+                            log_file.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S'):<25}{file_name:<30}Replaced\n")
+                        except Exception as e:
+                            print(f"Failed to replace file '{file_name}': {e}")
+                            log_file.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S'):<25}{file_name:<30}Failed\n")
+                    else:
+                        print(f"File '{file_name}' on server is larger.")
+                        log_file.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S'):<25}{file_name:<30}-----\n")
+                else:
+                    print(f"Skipping directory '{local_file_path}'.")
+        except Exception as e:
+            print(f"Failed to upload files: {e}")
+        finally:
+            ftps.quit()
+
+except FileNotFoundError as fnf_error:
+    print(fnf_error)
+except PermissionError as perm_error:
+    print(perm_error)
+except Exception as e:
+    print(f"An unexpected error occurred: {e}")
