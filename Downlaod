@@ -1,0 +1,65 @@
+from ftplib import FTP_TLS
+import os
+
+# Define server credentials
+hostname = "nikoleta.medphys.ucl.ac.uk"
+username = "uclh"
+password = "\"Hh2jaKe29"
+
+# Define local directory to store downloads
+local_download_path = "C:\\Users\\sebas\\Documents\\Uni\\Testing\\Downloads"
+
+# Ensure the Downloads folder exists
+if not os.path.exists(local_download_path):
+    os.makedirs(local_download_path)
+    print(f"Created folder: {local_download_path}")
+else:
+    print(f"Folder already exists: {local_download_path}")
+
+try:
+    # Establish a secure connection to the FTP server
+    ftps = FTP_TLS(hostname)
+    ftps.auth()
+    ftps.prot_p()
+    ftps.login(user=username, passwd=password)
+    print(f"Successfully connected to {hostname}")
+
+    # Change to the 'UCLH' directory
+    ftps.cwd("UCLH")
+    print("Changed to 'UCLH' directory.")
+    
+    # Change to the 'Testing' directory
+    ftps.cwd("Testing")
+    print("Changed to 'Testing' directory.")
+
+    # List files in the directory
+    files = ftps.nlst()
+    print("Files in 'Testing' directory:", files)
+
+    # Function to get file size on FTP server
+    def get_remote_file_size(ftp, filename):
+        try:
+            return ftp.size(filename)
+        except Exception:
+            return None
+
+    # Check and upload missing or outdated files
+    for file_name in files:
+        local_file_path = os.path.join(local_download_path, file_name)
+        remote_file_size = get_remote_file_size(ftps, file_name)
+        local_file_size = os.path.getsize(local_file_path) if os.path.exists(local_file_path) else 0
+        
+        # Download if file does not exist or remote file is larger
+        if not os.path.exists(local_file_path) or (remote_file_size and remote_file_size > local_file_size):
+            with open(local_file_path, "wb") as local_file:
+                ftps.retrbinary(f"RETR {file_name}", local_file.write)
+            print(f"Downloaded: {file_name} (Server size: {remote_file_size}, Local size: {local_file_size})")
+        else:
+            print(f"File already exists and is up-to-date: {file_name}")
+
+    # Close the FTP connection
+    ftps.quit()
+    print("FTP connection closed.")
+
+except Exception as e:
+    print(f"An error occurred: {e}")
